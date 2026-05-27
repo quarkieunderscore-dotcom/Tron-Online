@@ -1,0 +1,937 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MEGA TRON — Multiplayer</title>
+  <script src="/socket.io/socket.io.js"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700;900&display=swap');
+
+    :root {
+      --cyan:    #00ffcc;
+      --red:     #ff0055;
+      --yellow:  #ffff00;
+      --bg:      #030308;
+      --surface: rgba(3, 3, 16, 0.95);
+      --border:  rgba(0, 255, 204, 0.4);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--cyan);
+      font-family: 'Share Tech Mono', monospace;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+
+    canvas {
+      position: fixed;
+      top: 0; left: 0;
+      display: none;
+    }
+
+    /* ── Scan-lines overlay ── */
+    body::after {
+      content: '';
+      position: fixed; inset: 0;
+      background: repeating-linear-gradient(
+        0deg,
+        transparent,
+        transparent 2px,
+        rgba(0,255,204,0.015) 2px,
+        rgba(0,255,204,0.015) 4px
+      );
+      pointer-events: none;
+      z-index: 1000;
+    }
+
+    /* ─────────── SCREENS ─────────────────────────────────────── */
+
+    .screen {
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      width: 100%;
+      max-width: 520px;
+      padding: 16px;
+      z-index: 10;
+      animation: fadeIn 0.25s ease;
+    }
+    .screen.active { display: flex; }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(8px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    /* ─────────── TITLE ─────────────────────────────────────────── */
+
+    .title {
+      font-family: 'Orbitron', sans-serif;
+      font-weight: 900;
+      font-size: clamp(36px, 8vw, 60px);
+      letter-spacing: 6px;
+      text-shadow: 0 0 20px var(--cyan), 0 0 60px rgba(0,255,204,0.3);
+      margin-bottom: 4px;
+      text-align: center;
+    }
+
+    .subtitle {
+      font-size: 10px;
+      color: var(--red);
+      letter-spacing: 3px;
+      margin-bottom: 32px;
+      text-align: center;
+    }
+
+    /* ─────────── PANEL ─────────────────────────────────────────── */
+
+    .panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      box-shadow: 0 0 30px rgba(0,255,204,0.08), inset 0 1px 0 rgba(0,255,204,0.1);
+      padding: 28px;
+      width: 100%;
+      border-radius: 2px;
+    }
+
+    .panel-title {
+      font-family: 'Orbitron', sans-serif;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 3px;
+      color: rgba(0,255,204,0.5);
+      margin-bottom: 20px;
+      text-transform: uppercase;
+    }
+
+    /* ─────────── INPUTS ─────────────────────────────────────────── */
+
+    .field {
+      width: 100%;
+      background: rgba(0,255,204,0.04);
+      border: 1px solid var(--border);
+      color: var(--cyan);
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 15px;
+      padding: 12px 14px;
+      outline: none;
+      transition: border-color 0.2s, box-shadow 0.2s;
+      border-radius: 1px;
+      margin-bottom: 10px;
+    }
+    .field:focus {
+      border-color: var(--cyan);
+      box-shadow: 0 0 12px rgba(0,255,204,0.2);
+    }
+    .field::placeholder { color: rgba(0,255,204,0.3); }
+
+    .field-code {
+      text-transform: uppercase;
+      letter-spacing: 4px;
+      font-size: 20px;
+      text-align: center;
+      font-family: 'Orbitron', sans-serif;
+      font-weight: 700;
+    }
+
+    /* ─────────── BUTTONS ─────────────────────────────────────────── */
+
+    .btn {
+      font-family: 'Orbitron', sans-serif;
+      font-weight: 700;
+      font-size: 12px;
+      letter-spacing: 2px;
+      padding: 13px 24px;
+      border: 1px solid var(--cyan);
+      background: transparent;
+      color: var(--cyan);
+      cursor: pointer;
+      transition: all 0.15s;
+      width: 100%;
+      margin-bottom: 8px;
+      text-transform: uppercase;
+    }
+    .btn:hover:not(:disabled) {
+      background: var(--cyan);
+      color: var(--bg);
+      box-shadow: 0 0 20px rgba(0,255,204,0.4);
+    }
+    .btn:disabled { opacity: 0.35; cursor: not-allowed; }
+    .btn-danger { border-color: var(--red); color: var(--red); }
+    .btn-danger:hover:not(:disabled) { background: var(--red); color: var(--bg); box-shadow: 0 0 20px rgba(255,0,85,0.4); }
+    .btn-secondary { border-color: rgba(0,255,204,0.3); color: rgba(0,255,204,0.5); font-size: 10px; }
+    .btn-secondary:hover:not(:disabled) { background: transparent; color: var(--cyan); border-color: var(--cyan); box-shadow: none; }
+
+    .btn-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    /* ─────────── DIVIDER ────────────────────────────────────────── */
+
+    .divider {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin: 18px 0;
+      color: rgba(0,255,204,0.25);
+      font-size: 10px;
+      letter-spacing: 2px;
+    }
+    .divider::before, .divider::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: var(--border);
+    }
+
+    /* ─────────── LOBBY ──────────────────────────────────────────── */
+
+    .room-code-display {
+      font-family: 'Orbitron', sans-serif;
+      font-size: 36px;
+      font-weight: 900;
+      letter-spacing: 10px;
+      text-align: center;
+      padding: 20px;
+      border: 1px dashed rgba(0,255,204,0.3);
+      margin-bottom: 20px;
+      text-shadow: 0 0 20px rgba(0,255,204,0.5);
+      cursor: pointer;
+      transition: border-color 0.2s;
+    }
+    .room-code-display:hover { border-color: var(--cyan); }
+    .room-code-hint {
+      font-size: 10px;
+      color: rgba(0,255,204,0.35);
+      text-align: center;
+      margin-top: -14px;
+      margin-bottom: 20px;
+      letter-spacing: 1px;
+    }
+
+    .player-list {
+      list-style: none;
+      margin-bottom: 16px;
+    }
+    .player-list li {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 9px 12px;
+      border-bottom: 1px solid rgba(0,255,204,0.07);
+      font-size: 13px;
+    }
+    .player-list li:last-child { border-bottom: none; }
+    .player-dot {
+      width: 10px; height: 10px;
+      border-radius: 50%;
+      flex-shrink: 0;
+      box-shadow: 0 0 8px currentColor;
+    }
+    .player-badge {
+      margin-left: auto;
+      font-size: 9px;
+      letter-spacing: 1px;
+      color: rgba(0,255,204,0.4);
+      padding: 2px 6px;
+      border: 1px solid rgba(0,255,204,0.2);
+    }
+
+    .bot-control {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 12px;
+      border: 1px solid rgba(0,255,204,0.15);
+      margin-bottom: 16px;
+      font-size: 12px;
+    }
+    .bot-control .controls { display: flex; align-items: center; gap: 12px; }
+    .bot-btn {
+      width: 28px; height: 28px;
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--cyan);
+      font-family: 'Orbitron', sans-serif;
+      font-size: 16px;
+      cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      transition: all 0.15s;
+    }
+    .bot-btn:hover { background: rgba(0,255,204,0.1); border-color: var(--cyan); }
+    .bot-count {
+      font-family: 'Orbitron', sans-serif;
+      font-size: 20px;
+      font-weight: 700;
+      min-width: 24px;
+      text-align: center;
+    }
+
+    .waiting-msg {
+      text-align: center;
+      font-size: 11px;
+      color: rgba(0,255,204,0.4);
+      letter-spacing: 1px;
+      margin-bottom: 12px;
+      animation: blink 1.4s step-end infinite;
+    }
+    @keyframes blink { 50% { opacity: 0.2; } }
+
+    /* ─────────── HUD (in-game) ──────────────────────────────────── */
+
+    #hud {
+      position: fixed;
+      top: 12px; left: 12px;
+      z-index: 100;
+      display: none;
+      font-size: 12px;
+      line-height: 1.8;
+      pointer-events: none;
+    }
+    #hud-panel {
+      background: rgba(3,3,16,0.85);
+      border: 1px solid rgba(0,255,204,0.2);
+      padding: 10px 14px;
+      min-width: 160px;
+    }
+    #hud-status {
+      font-family: 'Orbitron', sans-serif;
+      font-weight: 700;
+      font-size: 10px;
+      letter-spacing: 2px;
+      margin-bottom: 6px;
+    }
+
+    #leaderboard {
+      position: fixed;
+      top: 12px; right: 12px;
+      z-index: 100;
+      display: none;
+      font-size: 11px;
+    }
+    #lb-panel {
+      background: rgba(3,3,16,0.85);
+      border: 1px solid rgba(255,0,85,0.3);
+      padding: 10px 14px;
+      min-width: 180px;
+      max-height: 280px;
+      overflow-y: auto;
+    }
+    #lb-title {
+      font-family: 'Orbitron', sans-serif;
+      font-size: 9px;
+      letter-spacing: 2px;
+      color: var(--red);
+      margin-bottom: 8px;
+    }
+    .lb-entry {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 4px 0;
+      border-bottom: 1px solid rgba(255,255,255,0.05);
+      line-height: 1;
+    }
+    .lb-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+    .lb-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .lb-dead { opacity: 0.3; text-decoration: line-through; }
+
+    #controls-hint {
+      position: fixed;
+      bottom: 12px; left: 50%;
+      transform: translateX(-50%);
+      font-size: 10px;
+      color: rgba(0,255,204,0.3);
+      letter-spacing: 1px;
+      z-index: 100;
+      pointer-events: none;
+    }
+
+    /* ─────────── GAME OVER OVERLAY ─────────────────────────────── */
+
+    #gameover-overlay {
+      position: fixed;
+      inset: 0;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 200;
+      background: rgba(3,3,8,0.7);
+    }
+    #gameover-overlay.active { display: flex; }
+    #gameover-box {
+      background: var(--surface);
+      border: 2px solid var(--cyan);
+      box-shadow: 0 0 60px rgba(0,255,204,0.2);
+      padding: 40px 48px;
+      text-align: center;
+    }
+    #gameover-label {
+      font-family: 'Orbitron', sans-serif;
+      font-size: 40px;
+      font-weight: 900;
+      letter-spacing: 4px;
+      text-shadow: 0 0 30px var(--cyan);
+      margin-bottom: 8px;
+    }
+    #gameover-winner {
+      font-size: 16px;
+      color: rgba(0,255,204,0.7);
+      letter-spacing: 2px;
+      margin-bottom: 6px;
+    }
+    #gameover-sub {
+      font-size: 11px;
+      color: rgba(0,255,204,0.35);
+      letter-spacing: 2px;
+      animation: blink 1.2s step-end infinite;
+    }
+
+    /* ─────────── ERROR TOAST ────────────────────────────────────── */
+
+    #toast {
+      position: fixed;
+      bottom: 24px; left: 50%;
+      transform: translateX(-50%) translateY(60px);
+      background: rgba(255,0,85,0.9);
+      color: #fff;
+      font-family: 'Orbitron', sans-serif;
+      font-size: 11px;
+      letter-spacing: 2px;
+      padding: 10px 20px;
+      z-index: 500;
+      transition: transform 0.3s ease;
+      pointer-events: none;
+    }
+    #toast.show { transform: translateX(-50%) translateY(0); }
+
+    /* ─────────── RESPONSIVE ─────────────────────────────────────── */
+
+    @media (max-width: 480px) {
+      .panel { padding: 20px 16px; }
+      .title { font-size: 32px; letter-spacing: 3px; }
+      .room-code-display { font-size: 26px; letter-spacing: 6px; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ── SCREEN: Home ──────────────────────────────────────────────────── -->
+  <div id="screen-home" class="screen active">
+    <div class="title">MEGA TRON</div>
+    <div class="subtitle">ONLINE MULTIPLAYER ARENA</div>
+
+    <div class="panel">
+      <div class="panel-title">Enter Callsign</div>
+      <input class="field" id="input-name" placeholder="YOUR NAME" maxlength="16" autocomplete="off" />
+
+      <button class="btn" id="btn-create">CREATE ROOM</button>
+
+      <div class="divider">OR JOIN</div>
+
+      <input class="field field-code" id="input-code" placeholder="ROOM CODE" maxlength="6" autocomplete="off" />
+      <button class="btn" id="btn-join">JOIN ROOM</button>
+    </div>
+  </div>
+
+  <!-- ── SCREEN: Lobby ─────────────────────────────────────────────────── -->
+  <div id="screen-lobby" class="screen">
+    <div class="title" style="font-size:clamp(24px,5vw,40px); margin-bottom:2px;">MEGA TRON</div>
+    <div class="subtitle">LOBBY</div>
+
+    <div class="panel">
+      <div class="room-code-display" id="lobby-code" title="Click to copy">······</div>
+      <div class="room-code-hint">↑ SHARE THIS CODE · CLICK TO COPY</div>
+
+      <div class="panel-title">Players</div>
+      <ul class="player-list" id="lobby-players"></ul>
+
+      <div id="bot-section" style="display:none;">
+        <div class="bot-control">
+          <span>AI BOTS</span>
+          <div class="controls">
+            <button class="bot-btn" id="btn-bot-minus">−</button>
+            <span class="bot-count" id="bot-count-display">0</span>
+            <button class="bot-btn" id="btn-bot-plus">+</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="waiting-msg" id="waiting-msg">WAITING FOR HOST TO START…</div>
+      <button class="btn" id="btn-start" style="display:none;">START GAME</button>
+      <button class="btn btn-secondary" id="btn-leave">LEAVE ROOM</button>
+    </div>
+  </div>
+
+  <!-- ── HUD ──────────────────────────────────────────────────────────── -->
+  <div id="hud">
+    <div id="hud-panel">
+      <div id="hud-status">ALIVE</div>
+      <div id="hud-alive">· · · · ·</div>
+    </div>
+  </div>
+
+  <!-- ── LEADERBOARD ───────────────────────────────────────────────────── -->
+  <div id="leaderboard">
+    <div id="lb-panel">
+      <div id="lb-title">STANDINGS</div>
+      <div id="lb-entries"></div>
+    </div>
+  </div>
+
+  <div id="controls-hint">WASD / ARROW KEYS to turn</div>
+
+  <!-- ── GAME OVER ─────────────────────────────────────────────────────── -->
+  <div id="gameover-overlay">
+    <div id="gameover-box">
+      <div id="gameover-label">GAME OVER</div>
+      <div id="gameover-winner"></div>
+      <div id="gameover-sub">RESTARTING IN 4s…</div>
+    </div>
+  </div>
+
+  <!-- ── TOAST ────────────────────────────────────────────────────────── -->
+  <div id="toast"></div>
+
+  <canvas id="gameCanvas"></canvas>
+
+  <script>
+    // ─── DISCORD ACTIVITY SDK (optional) ────────────────────────────────────
+    // If running inside Discord, the SDK will be injected by Discord's frame.
+    // We detect it gracefully and fall back to standard web if absent.
+
+    let discordSdk = null;
+    let localPlayerId = null;
+
+    async function initDiscord() {
+      try {
+        // Discord injects this global when running as an Activity
+        if (typeof DiscordSDK !== 'undefined') {
+          const CLIENT_ID = window.__DISCORD_CLIENT_ID__ || 'YOUR_DISCORD_CLIENT_ID';
+          discordSdk = new DiscordSDK(CLIENT_ID);
+          await discordSdk.ready();
+
+          const { code } = await discordSdk.commands.authorize({
+            client_id: CLIENT_ID,
+            response_type: 'code',
+            state: '',
+            prompt: 'none',
+            scope: ['identify', 'guilds'],
+          });
+
+          // Exchange code for token on your server
+          const res = await fetch('/api/token', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ code }),
+          });
+          const { access_token } = await res.json();
+
+          await discordSdk.commands.authenticate({ access_token });
+          const user = await discordSdk.commands.getUser();
+          document.getElementById('input-name').value = user.username;
+          console.log('[Discord] Authenticated as', user.username);
+        }
+      } catch (e) {
+        console.log('[Discord] Not in Discord context, running standalone.');
+      }
+    }
+
+    // ─── SOCKET.IO ───────────────────────────────────────────────────────────
+
+    const socket = io({
+      transports: ['websocket', 'polling'],
+    });
+
+    // ─── STATE ───────────────────────────────────────────────────────────────
+
+    const canvas = document.getElementById('gameCanvas');
+    const ctx    = canvas.getContext('2d');
+
+    const WORLD_SIZE = 4500;
+    let gameRunning  = false;
+    let myPlayerId   = null;
+    let myColor      = '#00ffcc';
+    let currentPlayers = {};   // id → player state from server
+    let isHost       = false;
+    let botCount     = 0;
+    let camX = 0, camY = 0, camZoom = 1;
+    let spectating   = false;
+    const keysDown   = {};
+
+    function resize() {
+      canvas.width  = window.innerWidth;
+      canvas.height = window.innerHeight;
+    }
+    window.addEventListener('resize', resize);
+    resize();
+
+    // ─── SCREENS ─────────────────────────────────────────────────────────────
+
+    function showScreen(id) {
+      document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+      const el = document.getElementById(id);
+      if (el) el.classList.add('active');
+    }
+
+    function showToast(msg, duration = 3000) {
+      const t = document.getElementById('toast');
+      t.textContent = msg;
+      t.classList.add('show');
+      setTimeout(() => t.classList.remove('show'), duration);
+    }
+
+    // ─── HOME SCREEN ─────────────────────────────────────────────────────────
+
+    document.getElementById('btn-create').addEventListener('click', () => {
+      const name = document.getElementById('input-name').value.trim() || 'Player';
+      socket.emit('create_room', { name });
+    });
+
+    document.getElementById('btn-join').addEventListener('click', doJoin);
+    document.getElementById('input-code').addEventListener('keydown', e => {
+      if (e.key === 'Enter') doJoin();
+    });
+
+    function doJoin() {
+      const code = document.getElementById('input-code').value.trim();
+      const name = document.getElementById('input-name').value.trim() || 'Player';
+      if (!code) return showToast('ENTER A ROOM CODE');
+      socket.emit('join_room', { code, name });
+    }
+
+    // ─── LOBBY SCREEN ────────────────────────────────────────────────────────
+
+    function renderLobby(roomInfo) {
+      document.getElementById('lobby-code').textContent = roomInfo.code;
+
+      const ul = document.getElementById('lobby-players');
+      ul.innerHTML = '';
+      roomInfo.players.forEach(p => {
+        const li = document.createElement('li');
+        const dot = document.createElement('span');
+        dot.className = 'player-dot';
+        dot.style.backgroundColor = p.color;
+        dot.style.color = p.color;
+        li.appendChild(dot);
+        const nameSpan = document.createElement('span');
+        nameSpan.textContent = p.name;
+        li.appendChild(nameSpan);
+        if (p.isHost) {
+          const badge = document.createElement('span');
+          badge.className = 'player-badge';
+          badge.textContent = 'HOST';
+          li.appendChild(badge);
+        }
+        ul.appendChild(li);
+      });
+
+      const myId  = myPlayerId;
+      const iAmHost = roomInfo.players.some(p => p.id === myId && p.isHost);
+      isHost = iAmHost;
+
+      document.getElementById('bot-section').style.display = iAmHost ? 'block' : 'none';
+      document.getElementById('btn-start').style.display   = iAmHost ? 'block' : 'none';
+      document.getElementById('waiting-msg').style.display = iAmHost ? 'none'  : 'block';
+      document.getElementById('bot-count-display').textContent = roomInfo.botCount;
+      botCount = roomInfo.botCount;
+    }
+
+    document.getElementById('lobby-code').addEventListener('click', () => {
+      const code = document.getElementById('lobby-code').textContent;
+      navigator.clipboard.writeText(code).catch(() => {});
+      showToast('ROOM CODE COPIED!', 1500);
+    });
+
+    document.getElementById('btn-start').addEventListener('click', () => {
+      socket.emit('start_game');
+    });
+
+    document.getElementById('btn-leave').addEventListener('click', () => {
+      location.reload();
+    });
+
+    document.getElementById('btn-bot-minus').addEventListener('click', () => {
+      const current = parseInt(document.getElementById('bot-count-display').textContent, 10);
+      if (current > 0) socket.emit('set_bots', { count: current - 1 });
+    });
+
+    document.getElementById('btn-bot-plus').addEventListener('click', () => {
+      const current = parseInt(document.getElementById('bot-count-display').textContent, 10);
+      if (current < 6) socket.emit('set_bots', { count: current + 1 });
+    });
+
+    // ─── INPUT ───────────────────────────────────────────────────────────────
+
+    window.addEventListener('keydown', e => {
+      keysDown[e.key] = true;
+      if (!gameRunning) return;
+
+      const me = currentPlayers[myPlayerId];
+      if (!me || !me.alive) return;
+
+      let dir = null;
+      switch (e.key) {
+        case 'ArrowUp':    case 'w': case 'W': dir = 'UP';    break;
+        case 'ArrowDown':  case 's': case 'S': dir = 'DOWN';  break;
+        case 'ArrowLeft':  case 'a': case 'A': dir = 'LEFT';  break;
+        case 'ArrowRight': case 'd': case 'D': dir = 'RIGHT'; break;
+      }
+      if (dir) {
+        socket.emit('change_dir', { dir });
+        e.preventDefault();
+      }
+    });
+    window.addEventListener('keyup', e => { keysDown[e.key] = false; });
+
+    // Spectator free-cam
+    function updateSpectatorCam() {
+      if (!spectating) return;
+      const speed = 10 / camZoom;
+      if (keysDown['w'] || keysDown['W'] || keysDown['ArrowUp'])    camY -= speed;
+      if (keysDown['s'] || keysDown['S'] || keysDown['ArrowDown'])   camY += speed;
+      if (keysDown['a'] || keysDown['A'] || keysDown['ArrowLeft'])   camX -= speed;
+      if (keysDown['d'] || keysDown['D'] || keysDown['ArrowRight'])  camX += speed;
+      if (keysDown['q'] || keysDown['Q']) camZoom = Math.max(0.1, camZoom - 0.01);
+      if (keysDown['e'] || keysDown['E']) camZoom = Math.min(4.0, camZoom + 0.01);
+    }
+
+    // ─── SOCKET EVENTS ───────────────────────────────────────────────────────
+
+    socket.on('room_joined', ({ room, playerId, playerColor }) => {
+      myPlayerId = playerId;
+      myColor    = playerColor;
+      renderLobby(room);
+      showScreen('screen-lobby');
+    });
+
+    socket.on('room_update', roomInfo => {
+      renderLobby(roomInfo);
+    });
+
+    socket.on('join_error', ({ message }) => {
+      showToast(message.toUpperCase());
+    });
+
+    socket.on('game_start', () => {
+      enterGameMode();
+    });
+
+    socket.on('game_state', state => {
+      if (!gameRunning) return;
+      // Update players map
+      state.players.forEach(p => {
+        currentPlayers[p.id] = p;
+      });
+      updateHUD();
+      updateLeaderboard(state.players);
+    });
+
+    socket.on('game_over', ({ winnerName, winnerId }) => {
+      const box = document.getElementById('gameover-overlay');
+      const label = document.getElementById('gameover-label');
+      const winnerEl = document.getElementById('gameover-winner');
+
+      if (winnerId === myPlayerId) {
+        label.textContent = 'VICTORY';
+        label.style.color = '#00ffcc';
+        label.style.textShadow = '0 0 30px #00ffcc';
+        winnerEl.textContent = 'YOU SURVIVED';
+      } else {
+        label.textContent = 'ELIMINATED';
+        label.style.color = '#ff0055';
+        label.style.textShadow = '0 0 30px #ff0055';
+        winnerEl.textContent = winnerName ? `WINNER: ${winnerName}` : 'DRAW';
+      }
+      box.classList.add('active');
+
+      setTimeout(() => {
+        box.classList.remove('active');
+        exitGameMode();
+      }, 4000);
+    });
+
+    socket.on('disconnect', () => {
+      showToast('DISCONNECTED FROM SERVER');
+      if (gameRunning) exitGameMode();
+    });
+
+    // ─── GAME MODE TRANSITIONS ───────────────────────────────────────────────
+
+    function enterGameMode() {
+      gameRunning = true;
+      spectating  = false;
+      camZoom     = 1;
+
+      document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+      canvas.style.display = 'block';
+      document.getElementById('hud').style.display = 'block';
+      document.getElementById('leaderboard').style.display = 'block';
+      document.getElementById('controls-hint').style.display = 'block';
+      document.getElementById('gameover-overlay').classList.remove('active');
+
+      requestAnimationFrame(renderLoop);
+    }
+
+    function exitGameMode() {
+      gameRunning = false;
+      canvas.style.display = 'none';
+      document.getElementById('hud').style.display = 'none';
+      document.getElementById('leaderboard').style.display = 'none';
+      document.getElementById('controls-hint').style.display = 'none';
+      // Go back to lobby (server respawned everyone)
+      setTimeout(() => {
+        currentPlayers = {};
+        spectating = false;
+        showScreen('screen-lobby');
+      }, 100);
+    }
+
+    // ─── HUD ─────────────────────────────────────────────────────────────────
+
+    function updateHUD() {
+      const me = currentPlayers[myPlayerId];
+      const alive = Object.values(currentPlayers).filter(p => p.alive).length;
+      const total = Object.values(currentPlayers).length;
+
+      const statusEl = document.getElementById('hud-status');
+      if (me && me.alive) {
+        statusEl.textContent = 'ALIVE';
+        statusEl.style.color = '#00ffcc';
+        spectating = false;
+      } else if (me && !me.alive) {
+        statusEl.textContent = 'DEAD — SPECTATING';
+        statusEl.style.color = '#ff0055';
+        spectating = true;
+      }
+      document.getElementById('hud-alive').textContent = `${alive} / ${total} ALIVE`;
+    }
+
+    function updateLeaderboard(players) {
+      const sorted = [...players].sort((a, b) => b.alive - a.alive);
+      const entries = document.getElementById('lb-entries');
+      entries.innerHTML = '';
+      sorted.slice(0, 10).forEach(p => {
+        const div = document.createElement('div');
+        div.className = 'lb-entry' + (p.alive ? '' : ' lb-dead');
+        div.innerHTML = `
+          <span class="lb-dot" style="background:${p.color}; box-shadow:0 0 5px ${p.color}"></span>
+          <span class="lb-name" style="color:${p.color}">${p.name}</span>
+          <span style="font-size:9px;color:#555">${p.alive ? '▶' : '✕'}</span>
+        `;
+        entries.appendChild(div);
+      });
+    }
+
+    // ─── RENDER LOOP ─────────────────────────────────────────────────────────
+
+    function renderLoop() {
+      if (!gameRunning) return;
+      updateSpectatorCam();
+      render();
+      requestAnimationFrame(renderLoop);
+    }
+
+    function render() {
+      ctx.fillStyle = '#030308';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      // Find focus: follow self if alive, else follow first alive player
+      const me = currentPlayers[myPlayerId];
+      let focusX, focusY;
+
+      if (me && me.alive) {
+        focusX = me.x;
+        focusY = me.y;
+      } else if (spectating) {
+        // Auto-follow the first alive player while spectating
+        const alivePlayer = Object.values(currentPlayers).find(p => p.alive);
+        if (alivePlayer) {
+          focusX = alivePlayer.x + camX;
+          focusY = alivePlayer.y + camY;
+        } else {
+          focusX = WORLD_SIZE / 2 + camX;
+          focusY = WORLD_SIZE / 2 + camY;
+        }
+      } else {
+        focusX = WORLD_SIZE / 2;
+        focusY = WORLD_SIZE / 2;
+      }
+
+      ctx.save();
+      ctx.translate(canvas.width / 2, canvas.height / 2);
+      ctx.scale(camZoom, camZoom);
+      ctx.translate(-focusX, -focusY);
+
+      // Grid
+      ctx.strokeStyle = 'rgba(0,255,204,0.04)';
+      ctx.lineWidth = 1;
+      for (let g = 0; g <= WORLD_SIZE; g += 150) {
+        ctx.beginPath(); ctx.moveTo(g, 0); ctx.lineTo(g, WORLD_SIZE); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(0, g); ctx.lineTo(WORLD_SIZE, g); ctx.stroke();
+      }
+
+      // Border
+      ctx.strokeStyle = '#ff0055';
+      ctx.lineWidth = 6;
+      ctx.shadowColor = '#ff0055';
+      ctx.shadowBlur = 12;
+      ctx.strokeRect(3, 3, WORLD_SIZE - 6, WORLD_SIZE - 6);
+      ctx.shadowBlur = 0;
+
+      // Trails
+      Object.values(currentPlayers).forEach(p => {
+        if (!p.trail || p.trail.length < 1) return;
+        ctx.strokeStyle = p.color;
+        ctx.lineWidth = p.alive ? 3 : 2;
+        ctx.globalAlpha = p.alive ? 1.0 : 0.4;
+        ctx.shadowColor = p.color;
+        ctx.shadowBlur = p.alive ? 6 : 2;
+
+        ctx.beginPath();
+        ctx.moveTo(p.trail[0].x, p.trail[0].y);
+        for (let i = 1; i < p.trail.length; i++) {
+          ctx.lineTo(p.trail[i].x, p.trail[i].y);
+        }
+        ctx.lineTo(p.x, p.y);
+        ctx.stroke();
+
+        // Head
+        if (p.alive) {
+          ctx.shadowBlur = 16;
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(p.x - 5, p.y - 5, 10, 10);
+
+          // Name tag
+          ctx.shadowBlur = 0;
+          ctx.fillStyle = p.color;
+          ctx.globalAlpha = 0.85;
+          ctx.font = `bold 11px 'Share Tech Mono', monospace`;
+          ctx.textAlign = 'center';
+          const labelY = p.y - 12;
+          ctx.fillText(p.id === myPlayerId ? '▶ YOU' : p.name, p.x, labelY);
+        }
+
+        ctx.globalAlpha = 1.0;
+        ctx.shadowBlur = 0;
+      });
+
+      ctx.restore();
+    }
+
+    // ─── INIT ────────────────────────────────────────────────────────────────
+
+    initDiscord();
+  </script>
+</body>
+</html>
